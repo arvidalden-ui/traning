@@ -3,7 +3,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 3;
+  const APP_VERSION = 4;
   const MAX_AHEAD = 7;        // kommande dagar som går att titta på
   const STREAK_MIN = 0.8;     // minst 80 % avbockat räknas i "dagar i rad"
   const OVERVIEW_DAYS = 14;
@@ -82,7 +82,7 @@
       lift('Triceps pushdown', 3, '10–15', 'L', 'Sista setet till max.')
     ] },
     { name: 'Intervaller, bål och vader', focus: '', strength: false, rows: [
-      { id: 'intervaller', name: 'Intervaller på cykel eller roddmaskin', amount: '6 varv: 1 min hårt, 2 min lugnt', sets: 0,
+      { id: 'intervaller', name: 'Intervaller på cykel eller roddmaskin', amount: '5 minuter lugn uppvärmning, 6 varv med 1 minut hårt och 2 minuter lugnt, 3 minuter nedvarvning', sets: 0,
         how: '5 minuter lugn uppvärmning, 6 varv med 1 minut hårt och 2 minuter lugnt, 3 minuter nedvarvning.' },
       { id: 'planka', name: 'Planka med bakåttippat bäcken', amount: '3 × 20–30 sekunder', sets: 3,
         how: 'Spänn rumpa och mage maximalt.' },
@@ -182,12 +182,16 @@
     db: null,
     persisted: null,
     reloadPending: false,
+    readOnly: false,   // lagringen gick inte att öppna: inget kan ändras (så att inget skriver över riktig data)
+    busy: false,       // en säkerhetskopia läses in just nu
+    editSeq: 0,
     clock: null,       // { kind, date, row, rest, start, applied } – går på klocktid
     wakeNote: ''
   };
 
   const passFor = (date) => PASSES[parse(date).getDay()];
   const isLocked = (date) => date > state.today;
+  const frozen = (date) => isLocked(date) || state.readOnly || state.busy;
   const maxDate = () => addDays(state.today, MAX_AHEAD);
 
   function weekNo(date) {
@@ -288,6 +292,7 @@
     while (arr.length < Math.max(n, i + 1)) arr.push({ kg: '', reps: '' });
     arr[i][field] = value;
     if (hasLog(arr)) rec.log[row.key] = arr; else delete rec.log[row.key];
+    state.editSeq++;
     rec.t = Date.now();
     scheduleSave(date);
   }
@@ -307,6 +312,7 @@
     changed(date);
   }
   function changed(date) {
+    state.editSeq++;
     state.days[date].t = Date.now();
     if (!state.start) {
       state.start = mondayOf(state.today);
@@ -377,7 +383,7 @@
   function saveDay(date) {
     const rec = state.days[date];
     const ver = (saveVer[date] = (saveVer[date] || 0) + 1);
-    journalSet(date, rec);
+    if (state.db) journalSet(date, rec);
     return reportSave(write('days', (tx) => tx.objectStore('days').put(rec, date))
       .then(() => { if (saveVer[date] === ver) journalSet(date, null); }));
   }
@@ -385,6 +391,45 @@
     return reportSave(write('meta', (tx) => tx.objectStore('meta').put(value, key)));
   }
   const errText = (e) => (e && (e.message || e.name)) || String(e);
+
+  // Läser om alla dagar från databasen, t.ex. när appen syns igen. På Android delar en webbläsarflik
+  // och den installerade appen samma lagring; utan detta kunde den ena skriva över den andras kryss.
+  let rereading = false;
+  async function rereadFromDB() {
+    if (!state.db || state.readOnly || state.busy || rereading) return;
+    rereading = true;
+    try {
+      for (let round = 0; round < 3; round++) {
+        await flushSaves();
+        const seq = state.editSeq;
+        const { days, meta } = await loadAll();
+        if (seq !== state.editSeq) continue;          // något ändrades under tiden: läs igen
+        if (state.busy || state.readOnly) return;      // en inläsning har börjat: den bestämmer vad som gäller
+        const fresh = {};
+        Object.keys(days).forEach((k) => { if (isDate(k)) { const r = cleanDay(days[k]); if (r) fresh[k] = r; } });
+        // Ändringar vars sparning inte lyckats ligger kvar i reservjournalen: de behålls och sparas igen.
+        const journal = readJournal();
+        const retry = [];
+        Object.keys(journal).forEach((k) => {
+          const r = isDate(k) ? cleanDay(journal[k]) : null;
+          if (r && (!fresh[k] || r.t >= fresh[k].t)) { fresh[k] = r; retry.push(k); }
+        });
+        const changedData = JSON.stringify(fresh) !== JSON.stringify(state.days);
+        state.days = fresh;
+        retry.forEach((k) => saveDay(k));
+        if (isDate(meta.start)) state.start = meta.start;
+        if (changedData) {
+          if (!isTyping()) renderPage(); else refreshPageInPlace();
+          renderOverview();
+        }
+        return;
+      }
+    } catch (e) {
+      console.error('Kunde inte läsa om från lagringen:', e);
+    } finally {
+      rereading = false;
+    }
+  }
 
   // Varje inmatning sparas direkt (så att inget går förlorat om appen stängs mitt i).
   // flushSaves väntar in skrivningar som pågår, t.ex. innan en ny version laddas.
@@ -512,7 +557,7 @@
 
   function rowEl(date, row) {
     const n = setCount(row, date);
-    const locked = isLocked(date);
+    const locked = frozen(date);
     const rec = state.days[date];
     const v = rec && rec.c[row.id];
     const done = rowFrac(date, row) === 1;
@@ -569,7 +614,7 @@
       const p = prev ? prev.sets[i] : null;
       const kg = h('input', { class: 'kg', type: 'text', inputmode: 'decimal', autocomplete: 'off', enterkeyhint: 'next', maxlength: '6',
         'data-log': 'kg', 'data-i': String(i), placeholder: 'kg', 'aria-label': row.name + ', set ' + (i + 1) + ', vikt i kg' });
-      const reps = h('input', { class: 'reps', type: 'text', inputmode: 'numeric', pattern: '[0-9]*', autocomplete: 'off', enterkeyhint: 'next', maxlength: '3',
+      const reps = h('input', { class: 'reps', type: 'text', inputmode: 'numeric', pattern: '[0-9]*', autocomplete: 'off', enterkeyhint: i === n - 1 ? 'done' : 'next', maxlength: '3',
         'data-log': 'reps', 'data-i': String(i), placeholder: 'reps', 'aria-label': row.name + ', set ' + (i + 1) + ', reps' });
       kg.value = kgText(s.kg);
       reps.value = s.reps;
@@ -622,6 +667,25 @@
     });
     refreshSummary(date);
   }
+  // Uppdaterar kryss och fält på sidan som visas utan att rita om den (fältet du skriver i lämnas orört).
+  function refreshPageInPlace() {
+    const date = $('page').getAttribute('data-date');
+    if (!date) return;
+    document.querySelectorAll('#page [data-row]').forEach((li) => {
+      const row = findRow(date, li.getAttribute('data-row'));
+      if (!row) return;
+      refreshRow(li, date, row);
+      const sets = logSets(date, row);
+      li.querySelectorAll('input[data-log]').forEach((inp) => {
+        if (inp === document.activeElement) return;
+        const s = sets[+inp.getAttribute('data-i')] || { kg: '', reps: '' };
+        const v = inp.getAttribute('data-log') === 'kg' ? kgText(s.kg) : s.reps;
+        if (inp.value !== v) inp.value = v;
+      });
+      const raise = li.querySelector('[data-raise]');
+      if (raise) raise.hidden = !reachedTop(date, row);
+    });
+  }
   function refreshSummary(date) {
     const old = $('dial');
     if (old) {
@@ -661,7 +725,7 @@
   }
 
   function renderAlert() {
-    const msgs = [state.openError, state.saveError].filter(Boolean);
+    const msgs = [state.openError, state.swError, state.saveError].filter(Boolean);
     $('alert').hidden = msgs.length === 0;
     $('alert').textContent = msgs.join(' ');
   }
@@ -673,14 +737,14 @@
     $('foot').textContent = parts.join(' · ');
   }
 
+  const isStandalone = () => (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
   function renderInstallHint() {
-    const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
     const el = $('install-hint');
-    if (standalone) { el.hidden = true; return; }
+    if (isStandalone()) { el.hidden = true; return; }
     const ua = navigator.userAgent;
     const ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     el.textContent = ios
-      ? 'Lägg appen på hemskärmen: tryck på Dela-knappen och välj ”Lägg till på hemskärmen”. Det du kryssar här i Safari följer inte med dit.'
+      ? 'Lägg appen på hemskärmen: tryck på Dela (i iOS 26 under •••) och välj ”Lägg till på hemskärmen”. Det du kryssar här i Safari följer inte med dit.'
       : 'Lägg appen på startskärmen: öppna webbläsarens meny (⋮) och välj ”Installera app” eller ”Lägg till på startskärmen”.';
     el.hidden = false;
   }
@@ -757,12 +821,17 @@
     flushSaves();
     $('logview').hidden = false;
     document.body.classList.add('log-open');
+    $('app').inert = true;
     if (key) renderLogDetail(key); else renderLogList();
     $('logview').scrollTop = 0;
+    $('log-title').focus({ preventScroll: true });
   }
   function hideLog() {
+    if ($('logview').hidden) return;
     $('logview').hidden = true;
     document.body.classList.remove('log-open');
+    $('app').inert = false;
+    $('open-log').focus({ preventScroll: true });
   }
   function openLog(key) {
     history.pushState({ log: key || 'list' }, '');
@@ -770,7 +839,21 @@
   }
   function onPopState(e) {
     const st = e.state;
-    if (st && st.log) showLog(st.log === 'list' ? null : st.log); else hideLog();
+    const logWasOpen = !$('logview').hidden;
+    if (st && st.log) { showLog(st.log === 'list' ? null : st.log); return; }
+    hideLog();
+    if (logWasOpen || (st && st.guard)) return;
+    // Bakåt-skyddet användes (t.ex. Androids bakåt-gest från skärmkanten): visa något i stället för att stänga appen.
+    if (state.view !== state.today) goTo(state.today);
+    showToast('Bakåt en gång till stänger appen. Byt dag med pilarna, eller börja svepet en bit in från skärmkanten.');
+  }
+  let toastTimer = null;
+  function showToast(text) {
+    const el = $('toast');
+    el.textContent = text;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.hidden = true; }, 5000);
   }
 
   /* ================= Bläddra ================= */
@@ -792,6 +875,7 @@
     page.style.opacity = opacity === 1 ? '' : String(opacity);
   }
   function showDate(date) {
+    setPageStyle('none', 0, 1);
     state.view = date;
     renderBar();
     renderPage();
@@ -801,6 +885,7 @@
   // dir: +1 = nästa dag (bladet åker åt vänster), -1 = föregående.
   function goTo(date, dir) {
     if (!isDate(date) || date > maxDate()) return false;
+    state.dayPending = null;           // du har själv valt dag: inget automatiskt dagbyte efteråt
     finishAnim();
     if (date === state.view) { window.scrollTo(0, 0); return true; }
     dir = dir || (date > state.view ? 1 : -1);
@@ -918,12 +1003,15 @@
       const days = {};
       Object.keys(data.days).forEach((k) => { if (isDate(k)) { const r = cleanDay(data.days[k]); if (r) days[k] = r; } });
       const n = Object.keys(days).length;
-      const when = typeof data.exported === 'string' && isDate(data.exported.slice(0, 10)) ? longDate(data.exported.slice(0, 10)).toLowerCase() : 'okänt datum';
+      const exp = typeof data.exported === 'string' ? new Date(data.exported) : null;
+      const when = exp && !isNaN(exp.getTime()) ? longDate(ymd(exp)).toLowerCase() : 'okänt datum';
       if (!window.confirm('Läsa in säkerhetskopian från ' + when + ' med ' + n + ' dagar? Den ersätter allt som finns i appen nu.')) {
         backupMsg('Ingenting lästes in.');
         return;
       }
       const start = data.meta && isDate(data.meta.start) ? mondayOf(data.meta.start) : (earliestChecked(days) ? mondayOf(earliestChecked(days)) : null);
+      if (state.clock) { stopClock(); hideClockPanel(); }
+      state.busy = true;
       write(['days', 'meta'], (tx) => {
         const ds = tx.objectStore('days');
         const ms = tx.objectStore('meta');
@@ -933,12 +1021,15 @@
         if (start) ms.put(start, 'start');
       }).then(() => {
         try { localStorage.removeItem(JOURNAL); } catch (e) { console.info('Reservjournalen kunde inte rensas:', errText(e)); }
-        if (state.clock) { clearInterval(clockTimer); clockTimer = null; state.clock = null; releaseAwake(); hideClockPanel(); }
         state.days = days;
         state.start = start;
+        state.editSeq++;
+        state.busy = false;
         renderAll();
         backupMsg('Säkerhetskopian är inläst: ' + n + ' dagar.');
       }, (e) => {
+        state.busy = false;
+        renderAll();
         console.error('Inläsning misslyckades:', e);
         backupMsg('Säkerhetskopian kunde inte sparas i telefonen (' + errText(e) + '). Inget ändrades.', true);
       });
@@ -1012,14 +1103,22 @@
     }
     if (wake || document.visibilityState !== 'visible') return;
     navigator.wakeLock.request('screen').then((lock) => {
-      if (!state.clock) { lock.release(); return; }
+      if (!state.clock || wake) {      // klockan slut, eller ett annat anrop hann först: släpp det här låset
+        lock.release().catch((e) => console.info('Skärmlåset var redan släppt:', errText(e)));
+        return;
+      }
       wake = lock;
       lock.addEventListener('release', () => { if (wake === lock) wake = null; });
-      state.wakeNote = '';
+      // I hemskärmsappar på iOS 16.4–18.3 lyckas anropet men skärmen släcks ändå (rättat i iOS 18.4).
+      state.wakeNote = isIOS() && isStandalone() && /OS 1[67]_\d|OS 18_[0-3](?!\d)/.test(navigator.userAgent)
+        ? 'På den här iOS-versionen kan appen inte hålla skärmen vaken (det fungerar från iOS 18.4). Klockan räknar rätt ändå om skärmen släcks.'
+        : '';
       renderClockNote();
     }, (e) => {
       console.info('Skärmen kunde inte hållas vaken:', errText(e));
-      state.wakeNote = 'Skärmen kunde inte hållas vaken (' + errText(e) + '). Klockan räknar rätt ändå om skärmen släcks.';
+      state.wakeNote = e && e.name === 'NotAllowedError'
+        ? 'Tryck någonstans på skärmen så hålls den vaken medan klockan går.'
+        : 'Skärmen kunde inte hållas vaken. Klockan räknar rätt ändå om skärmen släcks.';
       renderClockNote();
     });
   }
@@ -1032,7 +1131,7 @@
   }
 
   function startClock(kind, date, rowId, rest) {
-    if (isLocked(date)) return;
+    if (frozen(date)) return;
     audioUnlock();
     clearTimeout(doneTimer);
     state.clock = { kind, date, row: rowId, rest: rest || null, start: Date.now(), applied: 0 };
@@ -1100,7 +1199,7 @@
     state.wakeNote = '';
     reportSave(write('meta', (tx) => tx.objectStore('meta').delete('clock')));
     releaseAwake();
-    setTimeout(tryReload, 0);
+    setTimeout(() => { finishDaySwitch(); tryReload(); }, 0);
   }
   function hideClockPanel() {
     clearTimeout(doneTimer);
@@ -1117,6 +1216,7 @@
     $('clock').hidden = false;
     document.body.classList.add('has-clock');
     renderClockNote();
+    if (!('ResizeObserver' in window)) document.body.style.setProperty('--clock-h', $('clock').offsetHeight + 'px');
   }
   function renderClock(pos) {
     const c = state.clock;
@@ -1127,7 +1227,8 @@
   }
   function renderClockNote() {
     const note = $('clock-note');
-    note.textContent = state.clock ? state.wakeNote : '';
+    const ios = isIOS() ? 'På iPhone hörs tonen inte i ljudlöst läge och telefonen vibrerar inte.' : '';
+    note.textContent = state.clock ? [state.wakeNote, ios].filter(Boolean).join(' ') : '';
     note.hidden = !note.textContent;
   }
   function onClockStop() {
@@ -1144,7 +1245,27 @@
   function tryReload() {
     if (!state.reloadPending || isTyping() || state.clock) return;
     state.reloadPending = false;
+    saveScroll();
     flushSaves().then(() => window.location.reload());
+  }
+  // Var på sidan du var, så att en omladdning (ny version, eller Android som startar om appen) inte flyttar dig.
+  const SCROLL_KEY = 'traning-scroll';
+  function saveScroll() {
+    try {
+      // Väntar ett dagbyte från midnatt sparas den nya dagen, så att en omstart inte fastnar på gårdagen.
+      const pending = !!state.dayPending && state.view === state.dayPending;
+      sessionStorage.setItem(SCROLL_KEY, JSON.stringify({ today: state.today, view: pending ? state.today : state.view, y: pending ? 0 : Math.round(window.scrollY) }));
+    } catch (e) { console.info('Kunde inte spara läget på sidan:', errText(e)); }
+  }
+  function restoreScroll() {
+    let s = null;
+    try {
+      s = JSON.parse(sessionStorage.getItem(SCROLL_KEY) || 'null');
+      sessionStorage.removeItem(SCROLL_KEY);
+    } catch (e) { console.info('Kunde inte läsa läget på sidan:', errText(e)); }
+    if (!s || s.today !== state.today || !isDate(s.view) || s.view > maxDate() || !Number.isFinite(s.y)) return;
+    if (s.view !== state.view) showDate(s.view);
+    window.scrollTo(0, s.y);
   }
   function registerSW() {
     if (!('serviceWorker' in navigator)) return;
@@ -1159,7 +1280,7 @@
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
     }, (e) => {
       console.error('Service worker kunde inte registreras:', e);
-      state.openError = 'Appen kunde inte förberedas för att fungera utan internet (' + errText(e) + ').';
+      state.swError = 'Appen kunde inte förberedas för att fungera utan internet (' + errText(e) + ').';
       renderAlert();
     });
   }
@@ -1171,7 +1292,7 @@
     if (!btn || btn.disabled) return;
     const li = btn.closest('[data-row]');
     const date = $('page').getAttribute('data-date');   // sidan som visas (kan ligga efter under bladvändning)
-    if (!li || !date || isLocked(date)) return;
+    if (!li || !date || frozen(date)) return;
     const row = findRow(date, li.getAttribute('data-row'));
     if (!row) return;
     const act = btn.getAttribute('data-act');
@@ -1188,7 +1309,7 @@
     if (!inp.matches || !inp.matches('input[data-log]')) return;
     const li = inp.closest('[data-row]');
     const date = $('page').getAttribute('data-date');
-    if (!li || !date || isLocked(date)) return;
+    if (!li || !date || frozen(date)) return;
     const row = findRow(date, li.getAttribute('data-row'));
     if (!row) return;
     const field = inp.getAttribute('data-log');
@@ -1199,13 +1320,44 @@
     if (raise) raise.hidden = !reachedTop(date, row);
   }
 
+  function onLogKey(e) {
+    if (e.key !== 'Enter' || !e.target.matches || !e.target.matches('input[data-log]')) return;
+    e.preventDefault();
+    const li = e.target.closest('[data-row]');
+    const fields = li ? Array.from(li.querySelectorAll('input[data-log]')) : [];
+    const i = fields.indexOf(e.target);
+    if (i >= 0 && i + 1 < fields.length) fields[i + 1].focus(); else e.target.blur();
+  }
+
+  // Vid midnatt: byt till den nya dagen, men inte mitt i en inmatning eller medan en klocka går.
   function checkToday() {
+    finishDaySwitch();
     const now = todayStr();
     if (now === state.today) return;
     const wasToday = state.view === state.today;
     state.today = now;
-    if (wasToday || state.view > maxDate()) state.view = now;
-    renderAll();
+    const keep = isTyping() || !!state.clock;
+    const before = state.view;
+    if ((!keep && wasToday) || state.view > maxDate()) state.view = now;
+    else if (keep && wasToday) state.dayPending = before;     // byt dag när inmatningen eller klockan är klar
+    renderBar();
+    renderOverview();
+    if (!isTyping()) renderPage();
+    if (state.view !== before) window.scrollTo(0, 0);
+  }
+  function finishDaySwitch() {
+    if (!state.dayPending || isTyping() || state.clock) return;
+    const old = state.dayPending;
+    state.dayPending = null;
+    if (state.view === old && old !== state.today) showDate(state.today);
+  }
+
+  // Bakåt-gest på Android (svep från skärmkanten) ska inte stänga appen: en extra historikpost
+  // läggs till vid tryck och fångar ett första oavsiktligt "bakåt".
+  function ensureBackGuard() {
+    if (isIOS() && isStandalone()) return;   // iPhone-appen har ingen bakåt som stänger den; svep från vänsterkanten ska byta dag
+    const st = history.state;
+    if ($('logview').hidden && !(st && (st.guard || st.log))) history.pushState({ guard: 1 }, '');
   }
 
   function bindEvents() {
@@ -1214,6 +1366,7 @@
     $('to-today').addEventListener('click', () => goTo(state.today));
     $('page').addEventListener('click', onPageClick);
     $('page').addEventListener('input', onLogInput);
+    $('page').addEventListener('keydown', onLogKey);
     $('open-log').addEventListener('click', () => openLog(null));
     $('log-back').addEventListener('click', () => history.back());
     $('log-body').addEventListener('click', (e) => {
@@ -1221,7 +1374,8 @@
       if (b) openLog(b.getAttribute('data-key'));
     });
     window.addEventListener('popstate', onPopState);
-    window.addEventListener('pagehide', flushSaves);
+    window.addEventListener('pagehide', () => { saveScroll(); flushSaves(); });
+    window.addEventListener('pageshow', (e) => { if (e.persisted) rereadFromDB(); });
     $('hist').addEventListener('click', (e) => {
       const b = e.target.closest('button[data-date]');
       if (b) goTo(b.getAttribute('data-date'));
@@ -1237,19 +1391,34 @@
     document.addEventListener('touchend', onTouchEnd, { passive: true });
     document.addEventListener('touchcancel', onTouchCancel, { passive: true });
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') flushSaves();
+      if (document.visibilityState === 'hidden') {
+        saveScroll();
+        flushSaves();
+        const a = document.activeElement;
+        if (a && a.matches && a.matches('input[data-log]')) a.blur();
+      }
       if (document.visibilityState === 'visible') {
         checkToday();
+        rereadFromDB();
         if (state.clock) { tickClock(); keepAwake(); }
         tryReload();
       }
     });
     $('clock-stop').addEventListener('click', onClockStop);
+    const setClockHeight = () => document.body.style.setProperty('--clock-h', $('clock').offsetHeight + 'px');
+    if ('ResizeObserver' in window) new ResizeObserver(setClockHeight).observe($('clock'));
     // Efter omstart med en klocka som går: ljudet låses upp vid första trycket.
-    document.addEventListener('click', () => { if (state.clock && (!actx || actx.state !== 'running')) audioUnlock(); }, true);
+    // På iPhone får skärmen bara hållas vaken efter ett tryck: försök igen vid nästa tryck.
+    document.addEventListener('click', () => {
+      if (!state.clock) return;
+      if (!actx || actx.state !== 'running') audioUnlock();
+      if (!wake) keepAwake();
+    }, true);
+    document.addEventListener('click', ensureBackGuard, true);
+    document.addEventListener('touchend', ensureBackGuard, { capture: true, passive: true });
     document.addEventListener('focusout', (e) => {
       if (e.target.matches && e.target.matches('input[data-log]')) flushSaves();
-      setTimeout(tryReload, 0);
+      setTimeout(() => { finishDaySwitch(); tryReload(); }, 0);
     });
     window.addEventListener('focus', checkToday);
     setInterval(checkToday, 30000);
@@ -1277,9 +1446,13 @@
     } catch (e) {
       console.error('Kunde inte öppna lagringen:', e);
       state.db = null;
-      state.openError = 'Lagringen i telefonen gick inte att öppna (' + errText(e) + '). Det du kryssar nu sparas inte.';
+      state.readOnly = true;
+      state.clock = null;
+      state.openError = 'Lagringen i telefonen gick inte att öppna (' + errText(e) + '). Inget går att kryssa eller fylla i just nu, så att inget sparat skrivs över. Stäng appen helt och öppna den igen.';
     }
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
     renderAll();
+    restoreScroll();
     if (history.state && history.state.log) showLog(history.state.log === 'list' ? null : history.state.log);
     if (state.clock) { keepAwake(); runClock(); }
     requestPersist();

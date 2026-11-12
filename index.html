@@ -81,13 +81,15 @@
   <footer class="foot" id="foot"></footer>
 </div>
 
-<section class="logview" id="logview" data-noswipe hidden aria-labelledby="log-title">
+<p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
+
+<section class="logview" id="logview" data-noswipe hidden role="dialog" aria-modal="true" aria-labelledby="log-title">
   <div class="log-inner">
     <header class="log-bar">
       <button class="icon-btn" id="log-back" type="button" aria-label="Tillbaka">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
       </button>
-      <h2 id="log-title">Logg</h2>
+      <h2 id="log-title" tabindex="-1">Logg</h2>
     </header>
     <div id="log-body"></div>
   </div>
