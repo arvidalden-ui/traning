@@ -3,7 +3,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 5;
+  const APP_VERSION = 6;
   const MAX_AHEAD = 7;        // kommande dagar som går att titta på
   const STREAK_MIN = 0.8;     // minst 80 % avbockat räknas i "dagar i rad"
   const OVERVIEW_DAYS = 14;
@@ -650,8 +650,9 @@
     const page = $('page');
     page.textContent = '';
     page.appendChild(heroCard(date));
-    page.appendChild(sectionCard('posture', 'Hållningsrutin', 'Varje dag, cirka 8 minuter', POSTURE, date));
+    // Dagens pass överst, hållningsrutinen under (önskat av användaren efter version 5).
     page.appendChild(sectionCard('pass', 'Dagens pass', pass.name, pass.rows, date, pass.strength ? strengthIntro() : null));
+    page.appendChild(sectionCard('posture', 'Hållningsrutin', 'Varje dag, cirka 8 minuter', POSTURE, date));
     page.setAttribute('data-date', date);
   }
 
