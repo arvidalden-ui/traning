@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#F5F6F8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0A0C10" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Träning">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="format-detection" content="telephone=no">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+<title>Träning</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<div class="app" id="app">
+
+  <header class="bar" id="bar">
+    <div class="datenav">
+      <button class="icon-btn" id="prev" type="button" aria-label="Föregående dag">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
+      <div class="date" aria-live="polite">
+        <span class="date-main" id="date-main"></span>
+        <span class="date-sub" id="date-sub"></span>
+      </div>
+      <button class="icon-btn" id="next" type="button" aria-label="Nästa dag">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+    </div>
+    <div class="tools" id="tools">
+      <button class="pill" id="to-today" type="button">Idag</button>
+      <button class="pill" id="open-log" type="button">Logg</button>
+    </div>
+  </header>
+
+  <p class="hint" id="install-hint" hidden></p>
+  <p class="alert" id="alert" role="alert" hidden></p>
+
+  <div class="clip" id="clip">
+    <div class="page" id="page"></div>
+  </div>
+
+  <section class="card" id="overview" aria-labelledby="h-overview">
+    <div class="card-head"><h2 id="h-overview">Senaste 14 dagarna</h2></div>
+    <div class="hist" id="hist"></div>
+    <p class="streak" id="streak"></p>
+  </section>
+
+  <section class="card" aria-labelledby="h-rules">
+    <div class="card-head"><h2 id="h-rules">Regler</h2></div>
+    <ol class="rules">
+      <li>Logga varje set med vikt och reps.</li>
+      <li>Värm upp med två till tre lättare set i passets första övning.</li>
+      <li>Klarar du översta repstalet i alla set höjer du vikten med minsta möjliga steg nästa pass. Annars försöker du ta ett rep till.</li>
+      <li>Sluta varje set 1–2 reps före max. Sista setet i benspark, lårcurl, flyes, sidolyft, curl och pushdown går till max.</li>
+      <li>Vila 2–3 minuter i tunga övningar och 1–2 minuter i övriga.</li>
+      <li>Sänk vikten på 2–3 sekunder och använd hela rörelsen.</li>
+      <li>Lägg inte till pass eller set.</li>
+    </ol>
+  </section>
+
+  <section class="card" id="backup" aria-labelledby="h-backup">
+    <div class="card-head"><h2 id="h-backup">Säkerhetskopia</h2></div>
+    <p class="small muted">Allt sparas bara i den här telefonen. Spara en kopia som fil och läs in den igen om du byter telefon.</p>
+    <div class="btn-row">
+      <button class="btn" id="export" type="button">Spara säkerhetskopia</button>
+      <label class="btn" id="import-label" for="import-file">Läs in säkerhetskopia</label>
+      <input class="visually-hidden" type="file" id="import-file">
+    </div>
+    <p class="small backup-msg" id="backup-msg" role="status" aria-live="polite"></p>
+  </section>
+
+  <footer class="foot" id="foot"></footer>
+</div>
+
+<section class="logview" id="logview" data-noswipe hidden aria-labelledby="log-title">
+  <div class="log-inner">
+    <header class="log-bar">
+      <button class="icon-btn" id="log-back" type="button" aria-label="Tillbaka">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
+      <h2 id="log-title">Logg</h2>
+    </header>
+    <div id="log-body"></div>
+  </div>
+</section>
+
+<div class="clock" id="clock" data-noswipe hidden>
+  <div class="clock-head">
+    <span class="clock-title" id="clock-title"></span>
+    <button class="pill" id="clock-stop" type="button">Stoppa</button>
+  </div>
+  <div class="clock-main">
+    <span class="clock-phase" id="clock-phase" role="status" aria-live="polite"></span>
+    <span class="clock-time" id="clock-time"></span>
+  </div>
+  <div class="clock-sub" id="clock-sub"></div>
+  <div class="clock-bar" aria-hidden="true"><span id="clock-fill"></span></div>
+  <p class="clock-note" id="clock-note" hidden></p>
+</div>
+</body>
+</html>
