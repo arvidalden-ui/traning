@@ -3,7 +3,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 6;
+  const APP_VERSION = 7;
   const MAX_AHEAD = 7;        // kommande dagar som går att titta på
   const STREAK_MIN = 0.8;     // minst 80 % avbockat räknas i "dagar i rad"
   const OVERVIEW_DAYS = 14;
@@ -37,8 +37,8 @@
       how: 'Ligg på rygg med böjda knän och fötterna höftbrett. Dra ner revbenen, tippa bäckenet bakåt, lyft höften tills kroppen är rak från knä till axel, håll 2 sekunder och sänk kontrollerat.' }
   ];
 
-  // Index = JavaScripts veckodag (0 = söndag).
-  const PASSES = [
+  // Index = JavaScripts veckodag (0 = söndag). Så här såg passen ut före ändringen den 12 november 2026.
+  const PASSES_OLD = [
     { name: 'Vila', focus: '', strength: false, rows: [
       { id: 'vila', name: 'Vila från träning', amount: '', sets: 0, how: 'Vila från träning. En promenad går bra.' }
     ] },
@@ -90,13 +90,31 @@
       lift('Vadpress', 3, '10–15', 'L', 'Paus i botten.')
     ] }
   ];
+  // Ändring från och med torsdag 12 november 2026 (önskad av användaren):
+  // - Ben B: hip thrust bort, hack squat in där hip thrust var, liggande lårcurl blir sittande lårcurl.
+  // - Cardio i zon 2 sist i passet varje dag, med antal minuter som loggas.
+  // Dagar före ändringen visas som de var, så att gamla kryss, procent och dagar i rad inte ändras.
+  const PROGRAM_CHANGE = '2026-11-12';
+  const CARDIO = { id: 'cardio-zon-2', key: 'cardio-zon-2', name: 'Cardio i zon 2', amount: 'Fyll i antal minuter', sets: 0, time: true,
+    how: 'Lugnt tempo i zon 2: du ska kunna prata i hela meningar. Fyll i hur många minuter du körde.' };
+  const PASSES_NEW = PASSES_OLD.map((p, wd) => {
+    let rows = p.rows.slice();
+    if (wd === 4) {
+      rows = rows.map((r) => {
+        if (r.id === 'hip-thrust') return lift('Hack squat', 4, '6–10', 'T', 'Fullt djup, sänk på 3 sekunder.');
+        if (r.id === 'liggande-larcurl') return lift('Sittande lårcurl', 3, '8–12', 'L', 'Sista setet till max.');
+        return r;
+      });
+    }
+    return { name: p.name, focus: p.focus, strength: p.strength, rows: rows.concat([CARDIO]) };
+  });
   // Styrkepassens första rad är uppvärmning i passets första övning.
-  PASSES.forEach((p) => {
+  [PASSES_OLD, PASSES_NEW].forEach((passes) => passes.forEach((p) => {
     if (!p.strength) return;
     const first = p.rows[0];
     p.rows.unshift({ id: 'uppvarmning', name: 'Uppvärmning', amount: '2–3 lättare set i ' + first.name, sets: 0,
       how: 'Två till tre lättare set i passets första övning: ' + first.name + '.' });
-  });
+  }));
 
   /* ================= Klockor: fasta tider ================= */
   // Varje fas: rubrik, undertext, längd i sekunder, ton, och vilket set som blir klart när fasen är slut.
@@ -189,7 +207,7 @@
     wakeNote: ''
   };
 
-  const passFor = (date) => PASSES[parse(date).getDay()];
+  const passFor = (date) => (date >= PROGRAM_CHANGE ? PASSES_NEW : PASSES_OLD)[parse(date).getDay()];
   const isLocked = (date) => date > state.today;
   const frozen = (date) => isLocked(date) || state.readOnly || state.busy;
   const maxDate = () => addDays(state.today, MAX_AHEAD);
@@ -241,7 +259,8 @@
   function findRow(date, id) { return allRows(date).find((r) => r.id === id) || null; }
 
   /* ---------- Logg: vikt och reps per set ---------- */
-  const hasVal = (s) => !!s && (s.kg !== '' || s.reps !== '');
+  const filled = (x) => x !== undefined && x !== null && x !== '';
+  const hasVal = (s) => !!s && (filled(s.kg) || filled(s.reps) || filled(s.min));
   const hasLog = (arr) => Array.isArray(arr) && arr.some(hasVal);
   const kgNum = (s) => parseFloat(String(s).replace(',', '.'));
   function logSets(date, row) {
@@ -275,6 +294,7 @@
   const kgText = (kg) => String(kg).replace('.', ',');
   function setText(s, short) {
     if (!hasVal(s)) return '–';
+    if (filled(s.min)) return s.min + ' min';
     if (s.kg !== '' && s.reps !== '') return kgText(s.kg) + (short ? '' : ' kg') + ' × ' + s.reps;
     return s.kg !== '' ? kgText(s.kg) + ' kg' : s.reps + ' reps';
   }
@@ -288,9 +308,14 @@
   function setLog(date, row, i, field, value) {
     const n = setCount(row, date);
     const rec = ensureDay(date);
-    const arr = logSets(date, row).map((s) => ({ kg: s.kg, reps: s.reps }));
-    while (arr.length < Math.max(n, i + 1)) arr.push({ kg: '', reps: '' });
-    arr[i][field] = value;
+    let arr;
+    if (row.time) {
+      arr = [{ min: value }];                  // cardio: ett värde, antal minuter
+    } else {
+      arr = logSets(date, row).map((s) => ({ kg: s.kg, reps: s.reps }));
+      while (arr.length < Math.max(n, i + 1)) arr.push({ kg: '', reps: '' });
+      arr[i][field] = value;
+    }
     if (hasLog(arr)) rec.log[row.key] = arr; else delete rec.log[row.key];
     state.editSeq++;
     rec.t = Date.now();
@@ -466,10 +491,9 @@
     if (r.log && typeof r.log === 'object') {
       Object.keys(r.log).forEach((k) => {
         if (!/^[a-z0-9-]{1,64}$/.test(k) || !Array.isArray(r.log[k])) return;
-        out.log[k] = r.log[k].slice(0, 12).map((s) => ({
-          kg: cleanNum(s && s.kg, 7),
-          reps: cleanNum(s && s.reps, 3).replace(/[.,]/g, '')
-        }));
+        out.log[k] = r.log[k].slice(0, 12).map((s) => (s && s.min !== undefined
+          ? { min: cleanNum(s.min, 3).replace(/[.,]/g, '') }
+          : { kg: cleanNum(s && s.kg, 7), reps: cleanNum(s && s.reps, 3).replace(/[.,]/g, '') }));
       });
     }
     return out;
@@ -578,7 +602,9 @@
     main.appendChild(text);
 
     const li = h('li', { class: 'row' + (done ? ' is-done' : ''), 'data-row': row.id }, [main]);
-    if (n && row.lift && !locked) {
+    if (row.time && !locked) {
+      li.appendChild(timeLine(date, row));
+    } else if (n && row.lift && !locked) {
       li.appendChild(setLines(date, row, n, v));
     } else if (n) {
       const sets = h('div', { class: 'sets' }, []);
@@ -625,6 +651,22 @@
     }
     wrap.appendChild(h('p', { class: 'raise', 'data-raise': '', hidden: !reachedTop(date, row) }, ['Höj vikten nästa pass']));
     return wrap;
+  }
+
+  // Cardio: ett fält för antal minuter, med förra gångens tid bredvid.
+  function timeLine(date, row) {
+    const s = logSets(date, row)[0] || {};
+    const prev = prevSession(row.key, date);
+    const ps = prev ? prev.sets[0] : null;
+    const d = prev ? parse(prev.date) : null;
+    const inp = h('input', { class: 'min', type: 'text', inputmode: 'numeric', pattern: '[0-9]*', autocomplete: 'off', enterkeyhint: 'done', maxlength: '3',
+      'data-log': 'min', 'data-i': '0', placeholder: 'min', 'aria-label': row.name + ', antal minuter' });
+    inp.value = filled(s.min) ? s.min : '';
+    return h('div', { class: 'timeline' }, [
+      inp,
+      h('span', { class: 'unit', 'aria-hidden': 'true', text: 'min' }),
+      h('span', { class: 'prev', 'data-prev': '0' }, [prev ? 'Förra (' + d.getDate() + ' ' + MON_SHORT[d.getMonth()] + '): ' + setText(ps, false) : 'Förra gången: –'])
+    ]);
   }
 
   function sectionCard(id, title, sub, rows, date, intro) {
@@ -679,8 +721,9 @@
       const sets = logSets(date, row);
       li.querySelectorAll('input[data-log]').forEach((inp) => {
         if (inp === document.activeElement) return;
-        const s = sets[+inp.getAttribute('data-i')] || { kg: '', reps: '' };
-        const v = inp.getAttribute('data-log') === 'kg' ? kgText(s.kg) : s.reps;
+        const s = sets[+inp.getAttribute('data-i')] || {};
+        const f = inp.getAttribute('data-log');
+        const v = f === 'kg' ? (filled(s.kg) ? kgText(s.kg) : '') : (filled(s[f]) ? s[f] : '');
         if (inp.value !== v) inp.value = v;
       });
       const raise = li.querySelector('[data-raise]');
@@ -764,9 +807,10 @@
   function programOrder() {
     const out = [];
     const seen = {};
-    [1, 2, 3, 4, 5, 6, 0].forEach((wd) => PASSES[wd].rows.forEach((r) => {
-      if (r.lift && !seen[r.key]) { seen[r.key] = true; out.push({ key: r.key, name: r.name }); }
-    }));
+    const add = (pred) => (r) => { if (pred(r) && !seen[r.key]) { seen[r.key] = true; out.push({ key: r.key, name: r.name, time: !!r.time }); } };
+    [1, 2, 3, 4, 5, 6, 0].forEach((wd) => PASSES_NEW[wd].rows.forEach(add((r) => r.lift)));
+    [1, 2, 3, 4, 5, 6, 0].forEach((wd) => PASSES_NEW[wd].rows.forEach(add((r) => r.time)));
+    [1, 2, 3, 4, 5, 6, 0].forEach((wd) => PASSES_OLD[wd].rows.forEach(add((r) => r.lift || r.time)));   // borttagna övningar: historiken finns kvar
     return out;
   }
   const shortDay = (date) => { const d = parse(date); return d.getDate() + ' ' + MON_SHORT[d.getMonth()] + (d.getFullYear() !== parse(state.today).getFullYear() ? ' ' + d.getFullYear() : ''); };
@@ -778,7 +822,7 @@
     body.textContent = '';
     const items = programOrder().map((ex) => ({ ex, s: sessionsOf(ex.key) })).filter((x) => x.s.length);
     if (!items.length) {
-      body.appendChild(h('p', { class: 'muted', id: 'log-empty', text: 'Inget loggat än. Fyll i vikt och reps vid övningarna på dagens sida.' }));
+      body.appendChild(h('p', { class: 'muted', id: 'log-empty', text: 'Inget loggat än. Fyll i vikt och reps, eller minuter för cardio, på dagens sida.' }));
       return;
     }
     body.appendChild(h('ul', { class: 'log-list', id: 'log-list' }, items.map(({ ex, s }) =>
@@ -798,15 +842,15 @@
     if (!s.length) { body.appendChild(h('p', { class: 'muted', text: 'Inget loggat för den här övningen än.' })); return; }
     let best = null;
     s.slice().reverse().forEach((x) => x.sets.forEach((set) => {
-      const kg = kgNum(set.kg);
-      if (kg > 0 && (!best || kg > best.kg)) best = { kg, text: kgText(set.kg), date: x.date };
+      const val = ex.time ? parseInt(set.min, 10) : kgNum(set.kg);
+      if (val > 0 && (!best || val > best.val)) best = { val, text: ex.time ? set.min + ' min' : kgText(set.kg) + ' kg', date: x.date };
     }));
     const first = s[s.length - 1];
     const last = s[0];
     body.appendChild(h('section', { class: 'card log-summary', id: 'log-summary' }, [
       h('dl', null, [
-        h('dt', { text: 'Tyngsta vikt hittills' }),
-        h('dd', { id: 'log-best', text: best ? best.text + ' kg (' + shortDay(best.date) + ')' : 'Ingen vikt loggad' }),
+        h('dt', { text: ex.time ? 'Längsta pass hittills' : 'Tyngsta vikt hittills' }),
+        h('dd', { id: 'log-best', text: best ? best.text + ' (' + shortDay(best.date) + ')' : (ex.time ? 'Ingen tid loggad' : 'Ingen vikt loggad') }),
         h('dt', { text: 'Första gången · ' + longDate(first.date) }),
         h('dd', { id: 'log-first', text: setsLine(first.sets) }),
         h('dt', { text: 'Senaste gången · ' + longDate(last.date) }),

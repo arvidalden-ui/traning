@@ -216,8 +216,15 @@ h1 { font-size: 30px; line-height: 1.08; font-weight: 750; letter-spacing: -.025
   border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
   font-size: 17px; font-variant-numeric: tabular-nums; text-align: center;
 }
-.setline input::placeholder { color: var(--control); }
-.setline input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+.setline input::placeholder, .timeline input::placeholder { color: var(--control); }
+.setline input:focus, .timeline input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+.timeline { display: grid; grid-template-columns: minmax(0, 76px) auto minmax(0, 1fr); align-items: center; gap: 8px; margin-top: 10px; }
+.timeline input {
+  width: 100%; min-width: 0; height: 44px; padding: 0 8px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+  font-size: 17px; font-variant-numeric: tabular-nums; text-align: center;
+}
+.timeline .unit { color: var(--muted); }
 .times { color: var(--muted); text-align: center; }
 .prev { min-width: 0; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .raise {
