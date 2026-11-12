@@ -3,7 +3,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 7;
+  const APP_VERSION = 8;
   const MAX_AHEAD = 7;        // kommande dagar som går att titta på
   const STREAK_MIN = 0.8;     // minst 80 % avbockat räknas i "dagar i rad"
   const OVERVIEW_DAYS = 14;
@@ -207,7 +207,33 @@
     wakeNote: ''
   };
 
-  const passFor = (date) => (date >= PROGRAM_CHANGE ? PASSES_NEW : PASSES_OLD)[parse(date).getDay()];
+  // Bytesdagen (torsdag 12 nov): en gammal övning som redan kryssats eller loggats den dagen (i version 6)
+  // visas på sin plats och räknas, så att det du redan gjort inte försvinner eller sänker dagens procent.
+  const SWITCH_PAIRS = [['hip-thrust', 'hack-squat'], ['liggande-larcurl', 'sittande-larcurl']];
+  function rowHasData(rec, key) {
+    return !!rec && (rec.c[key] === true || (Array.isArray(rec.c[key]) && rec.c[key].some(Boolean)) || hasLog(rec.log[key]));
+  }
+  function switchDayPass() {
+    const nw = PASSES_NEW[parse(PROGRAM_CHANGE).getDay()];
+    const rec = state.days[PROGRAM_CHANGE];
+    if (!rec) return nw;
+    const oldRows = PASSES_OLD[parse(PROGRAM_CHANGE).getDay()].rows;
+    let differs = false;
+    const rows = [];
+    nw.rows.forEach((r) => {
+      const pair = SWITCH_PAIRS.find((p) => p[1] === r.id);
+      if (pair && rowHasData(rec, pair[0])) {
+        rows.push(oldRows.find((o) => o.id === pair[0]));
+        differs = true;
+        if (rowHasData(rec, r.id)) rows.push(r);      // båda gjorda: visa båda
+      } else {
+        rows.push(r);
+      }
+    });
+    return differs ? { name: nw.name, focus: nw.focus, strength: nw.strength, rows } : nw;
+  }
+  const passFor = (date) => (date < PROGRAM_CHANGE ? PASSES_OLD[parse(date).getDay()]
+    : date === PROGRAM_CHANGE ? switchDayPass() : PASSES_NEW[parse(date).getDay()]);
   const isLocked = (date) => date > state.today;
   const frozen = (date) => isLocked(date) || state.readOnly || state.busy;
   const maxDate = () => addDays(state.today, MAX_AHEAD);
@@ -660,7 +686,7 @@
     const ps = prev ? prev.sets[0] : null;
     const d = prev ? parse(prev.date) : null;
     const inp = h('input', { class: 'min', type: 'text', inputmode: 'numeric', pattern: '[0-9]*', autocomplete: 'off', enterkeyhint: 'done', maxlength: '3',
-      'data-log': 'min', 'data-i': '0', placeholder: 'min', 'aria-label': row.name + ', antal minuter' });
+      'data-log': 'min', 'data-i': '0', 'aria-label': row.name + ', antal minuter' });
     inp.value = filled(s.min) ? s.min : '';
     return h('div', { class: 'timeline' }, [
       inp,
