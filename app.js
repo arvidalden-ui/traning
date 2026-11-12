@@ -3,7 +3,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 4;
+  const APP_VERSION = 5;
   const MAX_AHEAD = 7;        // kommande dagar som går att titta på
   const STREAK_MIN = 0.8;     // minst 80 % avbockat räknas i "dagar i rad"
   const OVERVIEW_DAYS = 14;
@@ -1030,6 +1030,7 @@
       }, (e) => {
         state.busy = false;
         renderAll();
+        rereadFromDB();      // en omläsning som hoppades över under inläsningen görs nu, så att inget annat skrivs över
         console.error('Inläsning misslyckades:', e);
         backupMsg('Säkerhetskopian kunde inte sparas i telefonen (' + errText(e) + '). Inget ändrades.', true);
       });

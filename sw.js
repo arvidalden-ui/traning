@@ -1,6 +1,6 @@
 /* Träning – service worker. Sparar appens egna filer så att den fungerar utan internet.
    Kryss och loggar ligger i IndexedDB och påverkas inte när en ny version installeras. */
-const VERSION = 4;
+const VERSION = 5;
 const CACHE = 'traning-v' + VERSION;
 const FILES = [
   './',
