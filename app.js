@@ -3,7 +3,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 8;
+  const APP_VERSION = 9;
   const MAX_AHEAD = 7;        // kommande dagar som går att titta på
   const STREAK_MIN = 0.8;     // minst 80 % avbockat räknas i "dagar i rad"
   const OVERVIEW_DAYS = 14;
@@ -210,6 +210,7 @@
   // Bytesdagen (torsdag 12 nov): en gammal övning som redan kryssats eller loggats den dagen (i version 6)
   // visas på sin plats och räknas, så att det du redan gjort inte försvinner eller sänker dagens procent.
   const SWITCH_PAIRS = [['hip-thrust', 'hack-squat'], ['liggande-larcurl', 'sittande-larcurl']];
+  const switchKeep = new Set();
   function rowHasData(rec, key) {
     return !!rec && (rec.c[key] === true || (Array.isArray(rec.c[key]) && rec.c[key].some(Boolean)) || hasLog(rec.log[key]));
   }
@@ -220,12 +221,16 @@
     const oldRows = PASSES_OLD[parse(PROGRAM_CHANGE).getDay()].rows;
     let differs = false;
     const rows = [];
+    // En rad som en gång visats står kvar så länge appen är öppen, även om dess sista kryss eller värde tas bort,
+    // så att man kan rätta på samma rad (annars skulle raden försvinna i bakgrunden och nya tryck inte sparas).
+    const keep = (id) => rowHasData(rec, id) || switchKeep.has(id);
     nw.rows.forEach((r) => {
       const pair = SWITCH_PAIRS.find((p) => p[1] === r.id);
-      if (pair && rowHasData(rec, pair[0])) {
+      if (pair && keep(pair[0])) {
         rows.push(oldRows.find((o) => o.id === pair[0]));
+        switchKeep.add(pair[0]);
         differs = true;
-        if (rowHasData(rec, r.id)) rows.push(r);      // båda gjorda: visa båda
+        if (keep(r.id)) { rows.push(r); switchKeep.add(r.id); }   // båda gjorda: visa båda
       } else {
         rows.push(r);
       }
@@ -1094,6 +1099,7 @@
         try { localStorage.removeItem(JOURNAL); } catch (e) { console.info('Reservjournalen kunde inte rensas:', errText(e)); }
         state.days = days;
         state.start = start;
+        switchKeep.clear();     // bytesdagen bedöms från den inlästa datan
         state.editSeq++;
         state.busy = false;
         renderAll();
