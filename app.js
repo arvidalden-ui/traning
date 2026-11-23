@@ -3,7 +3,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 9;
+  const APP_VERSION = 10;
   const MAX_AHEAD = 7;        // kommande dagar som går att titta på
   const STREAK_MIN = 0.8;     // minst 80 % avbockat räknas i "dagar i rad"
   const OVERVIEW_DAYS = 14;
@@ -115,6 +115,19 @@
     p.rows.unshift({ id: 'uppvarmning', name: 'Uppvärmning', amount: '2–3 lättare set i ' + first.name, sets: 0,
       how: 'Två till tre lättare set i passets första övning: ' + first.name + '.' });
   }));
+
+  // Övningarna matchas på sina befintliga loggnycklar, även i äldre versioner av programmet.
+  const MUSCLE_GROUPS = [
+    ['Bröst', ['lutande-hantelpress-30-grader', 'lutande-press-skivstang-eller-maskin', 'kabelflyes-nerifran-och-upp']],
+    ['Rygg', ['viktade-chins', 'broststodd-rodd', 'enarms-kabelrodd', 'latsdrag', 'sittande-kabelrodd-brett-grepp']],
+    ['Axlar', ['sittande-axelpress-med-ryggstod', 'sidolyft', 'omvanda-flyes', 'face-pulls',
+      'lutande-hantelpress-30-grader', 'lutande-press-skivstang-eller-maskin']],
+    ['Armar', ['hantelcurl', 'triceps-pushdown']],
+    ['Ben', ['hack-squat', 'rumansk-marklyft', 'benspark', 'sittande-larcurl', 'staende-vadpress',
+      'benpress', 'bulgarsk-utfallsboj', 'hip-thrust', 'liggande-larcurl', 'sittande-vadpress', 'vadpress']],
+    ['Bål', ['ab-wheel', 'hangande-knalyft', 'planka', 'pallof-press']]
+  ];
+  const RECOVERY_STATUSES = ['Nyligen tränad', 'Återhämtar sig', 'Troligen återhämtad'];
 
   /* ================= Klockor: fasta tider ================= */
   // Varje fas: rubrik, undertext, längd i sekunder, ton, och vilket set som blir klart när fasen är slut.
@@ -351,6 +364,7 @@
     state.editSeq++;
     rec.t = Date.now();
     scheduleSave(date);
+    renderRecovery();
   }
 
   function toggleCheck(date, row) {
@@ -376,6 +390,7 @@
       requestPersist();
     }
     saveDay(date);
+    renderRecovery();
   }
 
   /* ================= Lagring (IndexedDB) ================= */
@@ -477,6 +492,7 @@
         if (changedData) {
           if (!isTyping()) renderPage(); else refreshPageInPlace();
           renderOverview();
+          renderRecovery();
         }
         return;
       }
@@ -777,6 +793,30 @@
     renderOverview();
   }
 
+  function renderRecovery() {
+    const list = $('recovery-list');
+    if (state.readOnly) {
+      list.replaceChildren(h('li', { class: 'small muted', text: 'Träningsloggen kunde inte läsas.' }));
+      return;
+    }
+    const dates = Object.keys(state.days).filter((date) => date <= state.today).sort().reverse();
+    list.replaceChildren(...MUSCLE_GROUPS.map(([name, keys]) => {
+      const last = dates.find((date) => keys.some((key) => rowHasData(state.days[date], key)));
+      const days = last ? daysBetween(last, state.today) : null;
+      const level = days === null ? null : days < 2 ? 0 : days === 2 ? 1 : 2;
+      return h('li', { class: 'recovery-row' }, [
+        h('div', {}, [
+          h('strong', { text: name }),
+          last ? h('small', { class: 'muted', text: 'Senast: ' + relative(last).toLowerCase() }) : null
+        ]),
+        h('span', {
+          class: 'recovery-status' + (level === null ? '' : ' recovery-' + level),
+          text: level === null ? 'Ingen träning registrerad' : RECOVERY_STATUSES[level]
+        })
+      ]);
+    }));
+  }
+
   function renderOverview() {
     const hist = $('hist');
     hist.textContent = '';
@@ -828,6 +868,7 @@
     renderBar();
     renderPage();
     renderOverview();
+    renderRecovery();
     renderAlert();
     renderFoot();
   }
@@ -1420,6 +1461,7 @@
     else if (keep && wasToday) state.dayPending = before;     // byt dag när inmatningen eller klockan är klar
     renderBar();
     renderOverview();
+    renderRecovery();
     if (!isTyping()) renderPage();
     if (state.view !== before) window.scrollTo(0, 0);
   }
@@ -1446,6 +1488,11 @@
     $('page').addEventListener('input', onLogInput);
     $('page').addEventListener('keydown', onLogKey);
     $('open-log').addEventListener('click', () => openLog(null));
+    $('open-recovery').addEventListener('click', () => {
+      $('h-recovery').focus({ preventScroll: true });
+      const top = $('recovery').getBoundingClientRect().top + window.scrollY;
+      window.scrollTo(0, top - $('bar').offsetHeight - 8);
+    });
     $('log-back').addEventListener('click', () => history.back());
     $('log-body').addEventListener('click', (e) => {
       const b = e.target.closest('button[data-key]');

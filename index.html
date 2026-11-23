@@ -38,6 +38,7 @@
     <div class="tools" id="tools">
       <button class="pill" id="to-today" type="button">Idag</button>
       <button class="pill" id="open-log" type="button">Logg</button>
+      <button class="pill" id="open-recovery" type="button">Återhämtning</button>
     </div>
   </header>
 
@@ -47,6 +48,12 @@
   <div class="clip" id="clip">
     <div class="page" id="page"></div>
   </div>
+
+  <section class="card" id="recovery" aria-labelledby="h-recovery">
+    <div class="card-head"><h2 id="h-recovery" tabindex="-1">Återhämtning</h2></div>
+    <p class="card-sub">Grov uppskattning utifrån dagar sedan senaste avbockade eller loggade styrkeset.</p>
+    <ul class="recovery-list" id="recovery-list"></ul>
+  </section>
 
   <section class="card" id="overview" aria-labelledby="h-overview">
     <div class="card-head"><h2 id="h-overview">Senaste 14 dagarna</h2></div>

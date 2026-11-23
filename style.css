@@ -96,7 +96,7 @@ body.has-clock .app { padding-bottom: calc(var(--clock-h, 190px) + 16px); }
 .date-sub { font-size: 14px; color: var(--muted); }
 .tools { display: flex; justify-content: center; gap: 8px; }
 .pill {
-  min-height: 44px; min-width: 88px; padding: 0 18px;
+  min-height: 44px; min-width: 68px; padding: 0 12px;
   border: 1px solid var(--line); border-radius: 999px;
   background: var(--surface); font-size: 15px; font-weight: 600; color: var(--accent-ink);
 }
@@ -130,6 +130,22 @@ body.has-clock .toast { bottom: calc(var(--clock-h, 190px) + 12px); }
 }
 .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .card-sub { margin: 2px 0 0; font-size: 14px; color: var(--muted); }
+
+.recovery-list { list-style: none; margin: 10px 0 0; padding: 0; }
+.recovery-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  border-top: 1px solid var(--line); padding: 8px 0;
+}
+.recovery-row:last-child { padding-bottom: 0; }
+.recovery-row small { display: block; font-size: 13px; }
+.recovery-status {
+  text-align: right; font-size: 13px; font-weight: 600; color: var(--muted);
+}
+.recovery-0, .recovery-1, .recovery-2 {
+  padding: 4px 8px; border-radius: 8px; background: var(--bg);
+}
+.recovery-0 { color: var(--danger); }
+.recovery-2 { background: var(--accent-soft); color: var(--accent-ink); }
 h1, h2 { margin: 0; letter-spacing: -.01em; }
 h2 { font-size: 18px; font-weight: 650; }
 .count { font-family: var(--font-mono); font-size: 14px; color: var(--muted); white-space: nowrap; }
