@@ -1,7 +1,7 @@
 {
   "name": "Träning",
   "short_name": "Träning",
-  "description": "Daglig träningschecklista",
+  "description": "Markera tränade muskelgrupper och se uppskattad återhämtning",
   "lang": "sv",
   "dir": "ltr",
   "start_url": "./",
